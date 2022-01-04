@@ -32,6 +32,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define VBAT_GAIN 0.008864f
+#define MIN_CHANNEL_VALUE 500
+#define MAX_CHANNEL_VALUE 2500
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,6 +48,7 @@ ADC_HandleTypeDef hadc2;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim16;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -52,6 +56,7 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 uint32_t Servo_Feedback;
 uint32_t Servo_Trim;
+float BatteryVoltage=0.0;
 
 /* USER CODE END PV */
 
@@ -64,6 +69,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM16_Init(void);
 /* USER CODE BEGIN PFP */
 
 #ifdef __GNUC__
@@ -77,17 +83,60 @@ PUTCHAR_PROTOTYPE
 	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart == &huart1)
+		{
+			// Reset timeout
+			__HAL_TIM_SET_COUNTER(&htim16, 0);
+
+			// Add received byte to sbus FIFO
+			SBUS_AddByte(gSBUSByte);
+
+			// Available sbus frame ?
+			if (SBUS_GetChannel(&gSBUSChannels) == FRAME_COMPLETE)
+			{
+				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
+				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_0, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
+				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_1, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
+				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_2, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
+				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_3, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
+			}
+			// Restart IT
+			HAL_UART_Receive_IT(huart, &gSBUSByte, 1);
+		}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if (htim == &htim16)
+	{
+		SBUS_TimeoutCallback();
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
+	}
+
+}
+
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	if (hadc == &hadc1)
 	{
 		Servo_Feedback = HAL_ADC_GetValue(&hadc1);
-		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 	}
 	else if(hadc == &hadc2)
 	{
 		Servo_Trim = HAL_ADC_GetValue(&hadc2);
 	}
+}
+
+float getVbat(uint32_t RawValue)
+{
+	return VBAT_GAIN*(float)RawValue;
+}
+
+void SetSpeed(uint32_t value)
+{
+
 }
 /* USER CODE END PFP */
 
@@ -130,9 +179,11 @@ int main(void)
   MX_USART2_UART_Init();
   MX_ADC2_Init();
   MX_TIM3_Init();
+  MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_IT(&hadc1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_UART_Receive_IT(&huart1, &gSBUSByte, 1);
 
   /* USER CODE END 2 */
 
@@ -451,6 +502,38 @@ static void MX_TIM3_Init(void)
   /* USER CODE BEGIN TIM3_Init 2 */
 
   /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
+  * @brief TIM16 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM16_Init(void)
+{
+
+  /* USER CODE BEGIN TIM16_Init 0 */
+
+  /* USER CODE END TIM16_Init 0 */
+
+  /* USER CODE BEGIN TIM16_Init 1 */
+
+  /* USER CODE END TIM16_Init 1 */
+  htim16.Instance = TIM16;
+  htim16.Init.Prescaler = 31;
+  htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim16.Init.Period = 1000;
+  htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim16.Init.RepetitionCounter = 0;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM16_Init 2 */
+
+  /* USER CODE END TIM16_Init 2 */
 
 }
 
