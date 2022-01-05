@@ -19,11 +19,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <sbus.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <sbus.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,7 +88,7 @@ PUTCHAR_PROTOTYPE
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if (huart == &huart1)
+	if (huart == &huart2)
 		{
 			// Reset timeout
 			__HAL_TIM_SET_COUNTER(&htim16, 0);
@@ -101,10 +100,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			if (SBUS_GetChannel(&gSBUSChannels) == FRAME_COMPLETE)
 			{
 				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
-				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_0, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
-				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_1, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
-				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_2, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
-				__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_3, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE));
+//				I = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_0, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
+//				II = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_1, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
+//				III = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_2, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
+//				IV = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_3, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
 			}
 			// Restart IT
 			HAL_UART_Receive_IT(huart, &gSBUSByte, 1);
@@ -187,7 +186,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_IT(&hadc1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  HAL_UART_Receive_IT(&huart1, &gSBUSByte, 1);
+  HAL_UART_Receive_IT(&huart2, &gSBUSByte, 1);
+  HAL_TIM_Base_Start_IT(&htim16);
 
   /* USER CODE END 2 */
 
@@ -195,7 +195,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    printf("tchou");
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -297,7 +296,7 @@ static void MX_ADC1_Init(void)
   }
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
@@ -531,7 +530,7 @@ static void MX_TIM16_Init(void)
   htim16.Init.Period = 1000;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
-  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
   {
     Error_Handler();
@@ -593,15 +592,19 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.BaudRate = 100000;
+  huart2.Init.WordLength = UART_WORDLENGTH_9B;
+  huart2.Init.StopBits = UART_STOPBITS_2;
+  huart2.Init.Parity = UART_PARITY_EVEN;
   huart2.Init.Mode = UART_MODE_TX_RX;
   huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
   huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_RXINVERT_INIT|UART_ADVFEATURE_RXOVERRUNDISABLE_INIT
+                              |UART_ADVFEATURE_DMADISABLEONERROR_INIT;
+  huart2.AdvancedInit.RxPinLevelInvert = UART_ADVFEATURE_RXINV_ENABLE;
+  huart2.AdvancedInit.OverrunDisable = UART_ADVFEATURE_OVERRUN_DISABLE;
+  huart2.AdvancedInit.DMADisableonRxError = UART_ADVFEATURE_DMA_DISABLEONRXERROR;
   if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
