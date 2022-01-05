@@ -72,12 +72,8 @@ void Error_Handler(void);
 #define Motor2_EN_GPIO_Port GPIOA
 #define Motor1_2_Pin GPIO_PIN_7
 #define Motor1_2_GPIO_Port GPIOA
-#define Motor2_2_Pin GPIO_PIN_0
-#define Motor2_2_GPIO_Port GPIOB
 #define Motor1_1_Pin GPIO_PIN_8
 #define Motor1_1_GPIO_Port GPIOA
-#define Motor2_1_Pin GPIO_PIN_9
-#define Motor2_1_GPIO_Port GPIOA
 #define LED_Pin GPIO_PIN_11
 #define LED_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */

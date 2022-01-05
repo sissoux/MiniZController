@@ -647,22 +647,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, Motor1_EN_Pin|Motor2_EN_Pin|LED_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Motor2_2_GPIO_Port, Motor2_2_Pin, GPIO_PIN_RESET);
-
   /*Configure GPIO pins : Motor1_EN_Pin Motor2_EN_Pin LED_Pin */
   GPIO_InitStruct.Pin = Motor1_EN_Pin|Motor2_EN_Pin|LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Motor2_2_Pin */
-  GPIO_InitStruct.Pin = Motor2_2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Motor2_2_GPIO_Port, &GPIO_InitStruct);
 
 }
 
