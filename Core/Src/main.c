@@ -19,6 +19,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <sbus.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -57,6 +58,9 @@ UART_HandleTypeDef huart2;
 uint32_t Servo_Feedback;
 uint32_t Servo_Trim;
 float BatteryVoltage=0.0;
+
+uint8_t gSBUSByte;
+struct sbuschannels gSBUSChannels;
 
 /* USER CODE END PV */
 
