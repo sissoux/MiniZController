@@ -141,14 +141,31 @@ void SetSpeed(uint32_t value, uint8_t dir)	//value is a per thousand value of ma
 {
 	if (dir==0)
 	{
-		//__HAL_TIM_SET_COUNTER(&htim1, 0);
-		HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
+		uint32_t tmpccer;
 
-		//HAL_GPIO_WritePin(Motor2_2_GPIO_Port, Motor2_2_Pin, 1);
+		/* Get the TIMx CCER register value */
+		tmpccer = htim1.Instance->CCER;
+
+		tmpccer &= ~TIM_CCER_CC2E;
+		tmpccer |= TIM_CCER_CC2NE;
+
+		HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
+		htim1.Instance->CCER = tmpccer;
 		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 	}
 	else
 	{
+		uint32_t tmpccer;
+
+		/* Get the TIMx CCER register value */
+		tmpccer = htim1.Instance->CCER;
+
+		tmpccer &= ~TIM_CCER_CC2NE;
+		tmpccer |= TIM_CCER_CC2E;
+
+		HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
+		htim1.Instance->CCER = tmpccer;
+		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 	}
 
 }
@@ -201,9 +218,9 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim16);
   HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 0);
   HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
-  HAL_GPIO_WritePin(Motor2_2_GPIO_Port, Motor2_2_Pin, 1);
   HAL_TIM_Base_Start(&htim1);
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+  //HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+  SetSpeed(0,0);
 
   /* USER CODE END 2 */
 
@@ -436,11 +453,13 @@ static void MX_TIM1_Init(void)
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
+  sConfigOC.Pulse = 250;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
