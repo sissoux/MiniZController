@@ -137,8 +137,19 @@ float getVbat(uint32_t RawValue)
 	return VBAT_GAIN*(float)RawValue;
 }
 
-void SetSpeed(uint32_t value)
+void SetSpeed(uint32_t value, uint8_t dir)	//value is a per thousand value of max speed.
 {
+	if (dir==0)
+	{
+		//__HAL_TIM_SET_COUNTER(&htim1, 0);
+		HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
+
+		//HAL_GPIO_WritePin(Motor2_2_GPIO_Port, Motor2_2_Pin, 1);
+		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+	}
+	else
+	{
+	}
 
 }
 /* USER CODE END PFP */
@@ -188,6 +199,11 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_UART_Receive_IT(&huart2, &gSBUSByte, 1);
   HAL_TIM_Base_Start_IT(&htim16);
+  HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 0);
+  HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
+  HAL_GPIO_WritePin(Motor2_2_GPIO_Port, Motor2_2_Pin, 1);
+  HAL_TIM_Base_Start(&htim1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 
   /* USER CODE END 2 */
 
@@ -390,7 +406,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 65535;
+  htim1.Init.Period = 1000;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -403,7 +419,7 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_OC_Init(&htim1) != HAL_OK)
+  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -414,18 +430,18 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-  if (HAL_TIM_OC_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_TIM_OC_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -631,12 +647,22 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, Motor1_EN_Pin|Motor2_EN_Pin|LED_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(Motor2_2_GPIO_Port, Motor2_2_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : Motor1_EN_Pin Motor2_EN_Pin LED_Pin */
   GPIO_InitStruct.Pin = Motor1_EN_Pin|Motor2_EN_Pin|LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Motor2_2_Pin */
+  GPIO_InitStruct.Pin = Motor2_2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(Motor2_2_GPIO_Port, &GPIO_InitStruct);
 
 }
 
