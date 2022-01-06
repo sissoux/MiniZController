@@ -35,6 +35,7 @@
 #define VBAT_GAIN 0.008864f
 #define MIN_CHANNEL_VALUE 500
 #define MAX_CHANNEL_VALUE 2500
+#define MAX_SERVO_SPEED_GAIN 0.33f	//between 0 and 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -139,6 +140,10 @@ float getVbat(uint32_t RawValue)
 
 void SetSpeed(uint32_t value, uint8_t dir)	//value is a per thousand value of max speed.
 {
+	uint32_t maxVal = htim1.Instance->ARR;
+
+	value = (uint32_t)((float)value*MAX_SERVO_SPEED_GAIN/1000.0f*(float)maxVal);
+
 	if (dir==0)
 	{
 		uint32_t tmpccer;
@@ -149,9 +154,7 @@ void SetSpeed(uint32_t value, uint8_t dir)	//value is a per thousand value of ma
 		tmpccer &= ~TIM_CCER_CC2E;
 		tmpccer |= TIM_CCER_CC2NE;
 
-		HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
 		htim1.Instance->CCER = tmpccer;
-		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 	}
 	else
 	{
@@ -163,10 +166,10 @@ void SetSpeed(uint32_t value, uint8_t dir)	//value is a per thousand value of ma
 		tmpccer &= ~TIM_CCER_CC2NE;
 		tmpccer |= TIM_CCER_CC2E;
 
-		HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
 		htim1.Instance->CCER = tmpccer;
-		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 	}
+
+	htim1.Instance->CCR2 = value;
 
 }
 /* USER CODE END PFP */
@@ -216,11 +219,10 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_UART_Receive_IT(&huart2, &gSBUSByte, 1);
   HAL_TIM_Base_Start_IT(&htim16);
-  HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 0);
+  HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 1);
   HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
   HAL_TIM_Base_Start(&htim1);
-  //HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-  SetSpeed(0,0);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 
   /* USER CODE END 2 */
 
@@ -228,6 +230,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  for(int spd = 0; spd < 1000; spd++)
+	  {
+		  SetSpeed(spd,0);
+		  HAL_Delay(1);
+	  }
+	  for(int spd = 0; spd < 1000; spd++)
+	  {
+		  SetSpeed(1000-spd,0);
+		  HAL_Delay(1);
+	  }
+	  for(int spd = 0; spd < 1000; spd++)
+	  {
+		  SetSpeed(spd,1);
+		  HAL_Delay(1);
+	  }
+	  for(int spd = 0; spd < 1000; spd++)
+	  {
+		  SetSpeed(1000-spd,1);
+		  HAL_Delay(1);
+	  }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
