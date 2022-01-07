@@ -35,9 +35,16 @@
 #define VBAT_GAIN 0.008864f
 #define MIN_CHANNEL_VALUE 500
 #define MAX_CHANNEL_VALUE 2500
-#define MAX_SERVO_SPEED_GAIN 0.25f	//between 0 and 1
-#define MAX_MOTOR_SPEED_GAIN 0.25f	//between 0 and 1
+#define MAX_SERVO_SPEED_GAIN 0.5f	//between 0 and 1
+#define MAX_MOTOR_SPEED_GAIN 0.75f	//between 0 and 1
 #define MOTOR_OUT_DEADBAND 50 //Perthousand
+
+#define SERVO_KP 8.0f
+#define SERVO_KI 0.05f
+#define SERVO_KD 0.0f
+#define SERVO_ITERM_CAPVALUE 3000.0f
+#define SERVO_LOOPDURATION 0.001f //seconds
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -48,6 +55,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
+DMA_HandleTypeDef hdma_adc1;
+DMA_HandleTypeDef hdma_adc2;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
@@ -57,18 +66,26 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint32_t Servo_Feedback;
+uint32_t analogCapture1[2] = {0,0};
+uint32_t analogCapture2[2] = {0,0};
+float Servo_Feedback;
 uint32_t Servo_Trim;
 float BatteryVoltage=0.0;
 
 uint8_t gSBUSByte;
 struct sbuschannels gSBUSChannels;
 
+uint8_t UpdateOutput = 0;
+
+uint8_t FirstLoop = 1;
+uint32_t ServoValue = 1850;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
@@ -118,20 +135,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if (htim == &htim16)
 	{
 		SBUS_TimeoutCallback();
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
+	}
+	if (htim == &htim3)
+	{
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
 	}
 
 }
-
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 {
-	if (hadc == &hadc1)
+	if (htim == &htim3)
 	{
-		Servo_Feedback = HAL_ADC_GetValue(&hadc1);
-	}
-	else if(hadc == &hadc2)
-	{
-		Servo_Trim = HAL_ADC_GetValue(&hadc2);
+		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
+		UpdateOutput=1;
 	}
 }
 
@@ -186,6 +202,43 @@ void WriteMotorsSpeed(uint32_t ServoValue, uint8_t ServoDir, uint32_t MotorValue
 	htim1.Instance->CCR2 = ServoValue;
 }
 
+void UpdateServoPID(uint32_t *speed, uint8_t *dir)
+{
+	float Servo_Target = ServoValue;
+	Servo_Feedback = analogCapture1[1];
+
+	static uint32_t previousPosition;
+	static float Iterm;
+
+	if (FirstLoop)
+	{
+		FirstLoop = 0;
+		previousPosition =Servo_Feedback;
+		Iterm = 0;
+	}
+
+	float error = Servo_Target - Servo_Feedback;
+
+	float Dterm = (Servo_Feedback - previousPosition)/SERVO_LOOPDURATION;
+	Iterm += error;
+
+	if (Iterm > SERVO_ITERM_CAPVALUE) Iterm = SERVO_ITERM_CAPVALUE;
+	else if (Iterm < -SERVO_ITERM_CAPVALUE) Iterm = SERVO_ITERM_CAPVALUE;
+
+	float out = error * SERVO_KP + Dterm * SERVO_KD + Iterm * SERVO_KI ;
+
+	if (out < 0)
+	{
+		*dir = 1;
+		*speed = -out;
+	}
+	else
+	{
+		*dir = 0;
+		*speed = out;
+	}
+}
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -221,6 +274,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
   MX_USART1_UART_Init();
@@ -229,15 +283,23 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
-  HAL_ADC_Start_IT(&hadc1);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_ADC_Start_DMA(&hadc1, analogCapture1, 2);
+  HAL_ADC_Start_DMA(&hadc2, analogCapture2, 1);
+
+  HAL_TIM_Base_Start_IT(&htim3);
+
+  HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_1);
   HAL_UART_Receive_IT(&huart2, &gSBUSByte, 1);
   HAL_TIM_Base_Start_IT(&htim16);
 
   HAL_TIM_Base_Start(&htim1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+
+  HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 1);
   WriteMotorsSpeed(0, 0, 0, 0);
+
+  uint32_t counter = 0;
 
   /* USER CODE END 2 */
 
@@ -246,6 +308,26 @@ int main(void)
   while (1)
   {
 
+	  if (UpdateOutput ==1)
+	  {
+		  counter++;
+		  if (counter <1000)
+		  {
+			  ServoValue = 1850;
+
+		  }
+		  else if (counter >2000)
+		  {
+			  counter = 0;
+		  }
+		  else ServoValue = 2350;
+
+		  UpdateOutput=0;
+		  uint32_t ServoSpeed = (uint32_t)((float)analogCapture2[0]/4.096f);
+		  uint8_t ServoDdir;
+		  UpdateServoPID(&ServoSpeed, &ServoDdir);
+		  WriteMotorsSpeed(ServoSpeed, ServoDdir, 0, 0);
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -323,14 +405,14 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
@@ -347,12 +429,20 @@ static void MX_ADC1_Init(void)
   }
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -388,11 +478,11 @@ static void MX_ADC2_Init(void)
   hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc2.Init.ContinuousConvMode = DISABLE;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
-  hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc2.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
   hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc2.Init.NbrOfConversion = 1;
-  hadc2.Init.DMAContinuousRequests = DISABLE;
+  hadc2.Init.DMAContinuousRequests = ENABLE;
   hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc2.Init.LowPowerAutoWait = DISABLE;
   hadc2.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
@@ -405,7 +495,7 @@ static void MX_ADC2_Init(void)
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
@@ -524,9 +614,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 16;
+  htim3.Init.Prescaler = 31;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 50;
+  htim3.Init.Period = 1000;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -549,7 +639,7 @@ static void MX_TIM3_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 500;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -665,6 +755,25 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
 
 }
 
