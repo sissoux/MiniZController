@@ -35,7 +35,9 @@
 #define VBAT_GAIN 0.008864f
 #define MIN_CHANNEL_VALUE 500
 #define MAX_CHANNEL_VALUE 2500
-#define MAX_SERVO_SPEED_GAIN 0.33f	//between 0 and 1
+#define MAX_SERVO_SPEED_GAIN 0.25f	//between 0 and 1
+#define MAX_MOTOR_SPEED_GAIN 0.25f	//between 0 and 1
+#define MOTOR_OUT_DEADBAND 50 //Perthousand
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -138,40 +140,52 @@ float getVbat(uint32_t RawValue)
 	return VBAT_GAIN*(float)RawValue;
 }
 
-void SetSpeed(uint32_t value, uint8_t dir)	//value is a per thousand value of max speed.
+void WriteMotorsSpeed(uint32_t ServoValue, uint8_t ServoDir, uint32_t MotorValue, uint8_t MotorDir)	//value is a per thousand value of max speed.
 {
-	uint32_t maxVal = htim1.Instance->ARR;
+	uint32_t tmpccer;
+	tmpccer = htim1.Instance->CCER; // Get the TIMx CCER register value
 
-	value = (uint32_t)((float)value*MAX_SERVO_SPEED_GAIN/1000.0f*(float)maxVal);
-
-	if (dir==0)
+	if (MotorDir==0)
 	{
-		uint32_t tmpccer;
+		tmpccer &= ~TIM_CCER_CC1E;
+		tmpccer |= TIM_CCER_CC1NE;
+	}
+	else if (MotorDir==1)
+	{
+		tmpccer &= ~TIM_CCER_CC1NE;
+		tmpccer |= TIM_CCER_CC1E;
+	}
 
-		/* Get the TIMx CCER register value */
-		tmpccer = htim1.Instance->CCER;
-
+	if (ServoDir==0)
+	{
 		tmpccer &= ~TIM_CCER_CC2E;
 		tmpccer |= TIM_CCER_CC2NE;
+	}
+	else if (ServoDir==1)
+	{
+		tmpccer &= ~TIM_CCER_CC2NE;
+		tmpccer |= TIM_CCER_CC2E;
+	}
 
-		htim1.Instance->CCER = tmpccer;
+	float maxVal = (float)htim1.Instance->ARR*MAX_SERVO_SPEED_GAIN/1000.0f;
+	if (MotorValue> MOTOR_OUT_DEADBAND)
+	{
+		MotorValue = (uint32_t)((float)MotorValue*maxVal);
+		HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 1);
 	}
 	else
 	{
-		uint32_t tmpccer;
-
-		/* Get the TIMx CCER register value */
-		tmpccer = htim1.Instance->CCER;
-
-		tmpccer &= ~TIM_CCER_CC2NE;
-		tmpccer |= TIM_CCER_CC2E;
-
-		htim1.Instance->CCER = tmpccer;
+		MotorValue = 0;
+		HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
 	}
 
-	htim1.Instance->CCR2 = value;
+	ServoValue = (uint32_t)((float)ServoValue*maxVal);
 
+	htim1.Instance->CCER = tmpccer;
+	htim1.Instance->CCR1 = MotorValue;
+	htim1.Instance->CCR2 = ServoValue;
 }
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -219,10 +233,11 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_UART_Receive_IT(&huart2, &gSBUSByte, 1);
   HAL_TIM_Base_Start_IT(&htim16);
-  HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 1);
-  HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
+
   HAL_TIM_Base_Start(&htim1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+  WriteMotorsSpeed(0, 0, 0, 0);
 
   /* USER CODE END 2 */
 
@@ -230,26 +245,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  for(int spd = 0; spd < 1000; spd++)
-	  {
-		  SetSpeed(spd,0);
-		  HAL_Delay(1);
-	  }
-	  for(int spd = 0; spd < 1000; spd++)
-	  {
-		  SetSpeed(1000-spd,0);
-		  HAL_Delay(1);
-	  }
-	  for(int spd = 0; spd < 1000; spd++)
-	  {
-		  SetSpeed(spd,1);
-		  HAL_Delay(1);
-	  }
-	  for(int spd = 0; spd < 1000; spd++)
-	  {
-		  SetSpeed(1000-spd,1);
-		  HAL_Delay(1);
-	  }
 
     /* USER CODE END WHILE */
 
