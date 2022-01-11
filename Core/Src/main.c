@@ -37,13 +37,23 @@
 #define MAX_CHANNEL_VALUE 2500
 #define MAX_SERVO_SPEED_GAIN 0.5f	//between 0 and 1
 #define MAX_MOTOR_SPEED_GAIN 0.75f	//between 0 and 1
-#define MOTOR_OUT_DEADBAND 50 //Perthousand
+#define MOTOR_OUT_DEADBAND 50 //Perthousand ==> If output value is in this region, deactivate for freewheeling
 
 #define SERVO_KP 8.0f
 #define SERVO_KI 0.05f
 #define SERVO_KD 0.0f
 #define SERVO_ITERM_CAPVALUE 3000.0f
 #define SERVO_LOOPDURATION 0.001f //seconds
+#define DIR_TRIM_BAND 200.0f
+#define DIR_MAX_VALUE 2300	//According to Min an Max values feedback ADC Can capture ==> Set channel to this range to avoid multiple conversions.
+#define DIR_MIN_VALUE 1700	//Ensure margin is enough to accomodate TrimGain
+
+
+#define THROTTLE_NEUTRAL_VALUE 1200
+#define THROTTLE_DEADBAND 100
+#define THROTTLE_REVERSE_DELAY	1500 //ms
+
+
 
 /* USER CODE END PD */
 
@@ -71,6 +81,8 @@ uint32_t analogCapture2[2] = {0,0};
 float Servo_Feedback;
 uint32_t Servo_Trim;
 float BatteryVoltage=0.0;
+uint32_t ServoSpeed=0;
+uint8_t ServoDir=0;
 
 uint8_t gSBUSByte;
 struct sbuschannels gSBUSChannels;
@@ -78,7 +90,12 @@ struct sbuschannels gSBUSChannels;
 uint8_t UpdateOutput = 0;
 
 uint8_t FirstLoop = 1;
-uint32_t ServoValue = 1850;
+uint32_t ServoValue = 2000;
+uint32_t Throttle = 0;
+uint32_t Direction = 2000;
+uint32_t MainMotorSpeed=0;
+uint32_t MainMotorDir=0;
+float dirTrimGain;
 
 /* USER CODE END PV */
 
@@ -106,6 +123,7 @@ PUTCHAR_PROTOTYPE
 	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
 }
 
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart == &huart2)
@@ -120,10 +138,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			if (SBUS_GetChannel(&gSBUSChannels) == FRAME_COMPLETE)
 			{
 				HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
-//				I = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_0, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
-//				II = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_1, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
-//				III = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_2, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
-//				IV = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_3, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
+				Throttle = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_2, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
+				Direction = (int16_t)SBUS_NormalizeChannel(gSBUSChannels.Channel_3, MIN_CHANNEL_VALUE, MAX_CHANNEL_VALUE);
 			}
 			// Restart IT
 			HAL_UART_Receive_IT(huart, &gSBUSByte, 1);
@@ -200,6 +216,27 @@ void WriteMotorsSpeed(uint32_t ServoValue, uint8_t ServoDir, uint32_t MotorValue
 	htim1.Instance->CCER = tmpccer;
 	htim1.Instance->CCR1 = MotorValue;
 	htim1.Instance->CCR2 = ServoValue;
+}
+
+
+#define THROTTLE_NEUTRAL_LOW THROTTLE_NEUTRAL_VALUE - THROTTLE_DEADBAND/2
+#define THROTTLE_NEUTRAL_HIGH THROTTLE_NEUTRAL_VALUE + THROTTLE_DEADBAND/2
+
+void NormalizeThrottle(uint32_t ChannelInput, uint32_t *SpeedOutput, uint32_t *DirOutput)
+{
+	if (ChannelInput < THROTTLE_NEUTRAL_LOW)	//Breaking
+	{
+		//*SpeedOutput = MAX_CHANNEL_VALUE
+	}
+	else if (ChannelInput > THROTTLE_NEUTRAL_HIGH)	//Accelerating
+	{
+
+	}
+	else //Freewheeling
+	{
+		*SpeedOutput = 0;
+		*DirOutput = 0;
+	}
 }
 
 void UpdateServoPID(uint32_t *speed, uint8_t *dir)
@@ -299,7 +336,7 @@ int main(void)
   HAL_GPIO_WritePin(Motor2_EN_GPIO_Port, Motor2_EN_Pin, 1);
   WriteMotorsSpeed(0, 0, 0, 0);
 
-  uint32_t counter = 0;
+  dirTrimGain = (float)DIR_TRIM_BAND/4095.0f;
 
   /* USER CODE END 2 */
 
@@ -310,23 +347,17 @@ int main(void)
 
 	  if (UpdateOutput ==1)
 	  {
-		  counter++;
-		  if (counter <1000)
-		  {
-			  ServoValue = 1850;
+		  ServoValue = Direction + (uint32_t)((float)analogCapture2[0]*DIR_TRIM_BAND /4095.0f);
 
-		  }
-		  else if (counter >2000)
-		  {
-			  counter = 0;
-		  }
-		  else ServoValue = 2350;
+		  if (ServoValue < DIR_MIN_VALUE) ServoValue = DIR_MIN_VALUE;
+		  else if (ServoValue > DIR_MAX_VALUE) ServoValue = DIR_MAX_VALUE;
+
+		  NormalizeThrottle(Throttle, &MainMotorSpeed, &MainMotorDir);
 
 		  UpdateOutput=0;
-		  uint32_t ServoSpeed = (uint32_t)((float)analogCapture2[0]/4.096f);
-		  uint8_t ServoDdir;
-		  UpdateServoPID(&ServoSpeed, &ServoDdir);
-		  WriteMotorsSpeed(ServoSpeed, ServoDdir, 0, 0);
+
+		  UpdateServoPID(&ServoSpeed, &ServoDir);
+		  WriteMotorsSpeed(ServoSpeed, ServoDir, MainMotorSpeed, MainMotorDir);
 	  }
     /* USER CODE END WHILE */
 

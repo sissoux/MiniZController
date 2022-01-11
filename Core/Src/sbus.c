@@ -104,6 +104,9 @@ uint32_t SBUS_GetChannel(struct sbuschannels *pChannels)
 
 int32_t SBUS_NormalizeChannel(uint16_t ChannelValue, int32_t Min, int32_t Max)
 {
+	if (ChannelValue <SBUS_CHANNEL_VALUE_MIN) ChannelValue =SBUS_CHANNEL_VALUE_MIN;
+	if (ChannelValue >SBUS_CHANNEL_VALUE_MAX) ChannelValue =SBUS_CHANNEL_VALUE_MAX;
+
 	int32_t ScaleA = Max - Min;
 	int32_t ScaleB = (Min * SBUS_CHANNEL_VALUE_MAX) - (Max * SBUS_CHANNEL_VALUE_MIN);
 	int32_t ScaleD = SBUS_CHANNEL_VALUE_MAX - SBUS_CHANNEL_VALUE_MIN;
