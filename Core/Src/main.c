@@ -96,6 +96,7 @@ uint32_t Direction = 2000;
 uint32_t MainMotorSpeed=0;
 uint32_t MainMotorDir=0;
 float dirTrimGain;
+int32_t BrakeTimeout = -1;
 
 /* USER CODE END PV */
 
@@ -151,10 +152,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if (htim == &htim16)
 	{
 		SBUS_TimeoutCallback();
+		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 	}
 	if (htim == &htim3)
 	{
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
+		if (BrakeTimeout >0) BrakeTimeout--;
+		//HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
 	}
 
 }
@@ -162,7 +165,7 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim == &htim3)
 	{
-		HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
+		//HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
 		UpdateOutput=1;
 	}
 }
@@ -203,12 +206,10 @@ void WriteMotorsSpeed(uint32_t ServoValue, uint8_t ServoDir, uint32_t MotorValue
 	if (MotorValue> MOTOR_OUT_DEADBAND)
 	{
 		MotorValue = (uint32_t)((float)MotorValue*maxVal);
-		HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 1);
 	}
 	else
 	{
 		MotorValue = 0;
-		HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
 	}
 
 	ServoValue = (uint32_t)((float)ServoValue*maxVal);
@@ -224,16 +225,39 @@ void WriteMotorsSpeed(uint32_t ServoValue, uint8_t ServoDir, uint32_t MotorValue
 
 void NormalizeThrottle(uint32_t ChannelInput, uint32_t *SpeedOutput, uint32_t *DirOutput)
 {
-	if (ChannelInput < THROTTLE_NEUTRAL_LOW)	//Breaking
+	if (ChannelInput < THROTTLE_NEUTRAL_LOW)	//Braking
 	{
-		//*SpeedOutput = MAX_CHANNEL_VALUE
+		if (BrakeTimeout <0 )	//Trigger the timeout
+		{
+			BrakeTimeout = THROTTLE_REVERSE_DELAY;
+			HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 1);
+			*SpeedOutput = 0;
+			*DirOutput = 0;
+		}
+		else if (BrakeTimeout == 0)	//if delay is ok, start reverse
+		{
+			*SpeedOutput = 500;	//Set reverse speed == TODO
+			*DirOutput = 1;
+		}
+		else //Brake
+		{
+			HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 1);
+			*SpeedOutput = 0;
+			*DirOutput = 0;
+		}
 	}
 	else if (ChannelInput > THROTTLE_NEUTRAL_HIGH)	//Accelerating
 	{
+		BrakeTimeout = -1;
+		*SpeedOutput = 500; //Set forward speed == TODO
+		*DirOutput = 0;
 
 	}
 	else //Freewheeling
 	{
+		BrakeTimeout = -1;
+		HAL_GPIO_WritePin(Motor1_EN_GPIO_Port, Motor1_EN_Pin, 0);
+
 		*SpeedOutput = 0;
 		*DirOutput = 0;
 	}
@@ -770,7 +794,7 @@ static void MX_USART2_UART_Init(void)
   huart2.Init.WordLength = UART_WORDLENGTH_9B;
   huart2.Init.StopBits = UART_STOPBITS_2;
   huart2.Init.Parity = UART_PARITY_EVEN;
-  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.Mode = UART_MODE_RX;
   huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
   huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
